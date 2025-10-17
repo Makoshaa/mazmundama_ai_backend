@@ -48,3 +48,8 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Deployment scripts (keep for reference)
+# build.sh
+# start.sh
+# render.yaml

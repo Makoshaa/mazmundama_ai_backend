@@ -1,0 +1,43 @@
+services:
+  - type: web
+    name: mazmundama-backend
+    runtime: python
+    plan: free
+    buildCommand: bash build.sh
+    startCommand: bash start.sh
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: DATABASE_URL
+        fromDatabase:
+          name: mazmundama-db
+          property: connectionString
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: CLAUDE_API_KEY
+        sync: false
+      - key: TRANSLATION_API_KEY
+        sync: false
+      - key: TRANSLATION_API_URL
+        value: https://mangisoz.nu.edu.kz/external-api/v1/translate/text/
+      - key: CLAUDE_API_URL
+        value: https://api.anthropic.com/v1/messages
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: JWT_ALGORITHM
+        value: HS256
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: 30
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: AWS_REGION
+        sync: false
+      - key: S3_BUCKET_NAME
+        sync: false
+
+databases:
+  - name: mazmundama-db
+    databaseName: mazmundama
+    plan: free
