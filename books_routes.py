@@ -15,49 +15,29 @@ import re
 router = APIRouter(prefix="/api/books", tags=["Books"])
 
 def wrap_sentences_in_html(html: str, sentence_counter: list = None) -> str:
-    """Оборачивает предложения в span теги для подсветки с уникальными ID"""
+    """Оборачивает абзацы в span теги для подсветки с уникальными ID"""
     if sentence_counter is None:
         sentence_counter = [0]
 
     soup = BeautifulSoup(html, 'html.parser')
 
-    def process_text_node(text):
-        if not text.strip():
-            return text
-
-        sentences = re.split(r'([.!?]+[\s\n]+|[.!?]+$)', text)
-        sentences = [s for s in sentences if s]
-
-        result = []
-        temp_sentence = ''
-
-        for part in sentences:
-            temp_sentence += part
-            if re.search(r'[.!?]+[\s\n]*$', part):
-                sentence_counter[0] += 1
-                result.append(f'<span class="sentence" data-sentence-id="sent-{sentence_counter[0]}">{temp_sentence}</span>')
-                temp_sentence = ''
-
-        if temp_sentence.strip():
-            sentence_counter[0] += 1
-            result.append(f'<span class="sentence" data-sentence-id="sent-{sentence_counter[0]}">{temp_sentence}</span>')
-
-        return ''.join(result)
-    
-    def process_element(element):
-        if element.name is None:
-            return process_text_node(str(element))
+    # Ищем все параграфы и заголовки
+    for element in soup.find_all(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li']):
+        # Пропускаем пустые элементы
+        if not element.get_text(strip=True):
+            continue
         
-        for child in list(element.children):
-            if child.name is None:
-                new_html = process_text_node(str(child))
-                from bs4 import BeautifulSoup as BS
-                new_soup = BS(new_html, 'html.parser')
-                child.replace_with(new_soup)
-            else:
-                process_element(child)
+        sentence_counter[0] += 1
+        
+        # Извлекаем весь контент элемента (включая вложенные теги)
+        content = ''.join(str(child) for child in element.children)
+        
+        # Очищаем элемент и добавляем span с контентом
+        element.clear()
+        from bs4 import BeautifulSoup as BS
+        span = BS(f'<span class="sentence" data-sentence-id="sent-{sentence_counter[0]}">{content}</span>', 'html.parser')
+        element.append(span)
     
-    process_element(soup)
     return str(soup)
 
 def paginate_html(html: str, chars_per_page: int = 1800) -> List[str]:
@@ -301,12 +281,43 @@ async def get_book(book_id: int, current_user: dict = Depends(get_current_user))
             (book_id,)
         )
         translations = cursor.fetchall()
+        
+        # Получаем все версии переводов для всех предложений
+        cursor.execute(
+            """
+            SELECT t.sentence_id, tv.text, tv.model, tv.created_at
+            FROM translation_versions tv
+            JOIN translations t ON tv.translation_id = t.id
+            WHERE t.book_id = %s
+            ORDER BY t.sentence_id, tv.created_at ASC
+            """,
+            (book_id,)
+        )
+        versions = cursor.fetchall()
+        
+        # Группируем версии по sentence_id
+        versions_by_sentence = {}
+        for version in versions:
+            sentence_id = version['sentence_id']
+            if sentence_id not in versions_by_sentence:
+                versions_by_sentence[sentence_id] = []
+            versions_by_sentence[sentence_id].append({
+                'text': version['text'],
+                'model': version['model'],
+                'timestamp': int(version['created_at'].timestamp() * 1000)  # Конвертируем в миллисекунды
+            })
+        
+        print(f"[DEBUG BACKEND] book_id={book_id}, translations={len(translations)}, versions_total={len(versions)}, versions_by_sentence={len(versions_by_sentence)}")
+        if versions_by_sentence:
+            first_key = list(versions_by_sentence.keys())[0]
+            print(f"[DEBUG BACKEND] Sample: {first_key} has {len(versions_by_sentence[first_key])} versions")
     
     return {
         "book": book,
         "pages": pages,
         "total_pages": len(pages),
-        "translations": {t['sentence_id']: t for t in translations}
+        "translations": {t['sentence_id']: t for t in translations},
+        "versions": versions_by_sentence
     }
 
 @router.post("/translation/save")
