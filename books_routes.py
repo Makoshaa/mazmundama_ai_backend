@@ -283,34 +283,39 @@ async def get_book(book_id: int, current_user: dict = Depends(get_current_user))
         translations = cursor.fetchall()
         
         # Получаем все версии переводов для всех предложений
-        cursor.execute(
-            """
-            SELECT t.sentence_id, tv.text, tv.model, tv.created_at
-            FROM translation_versions tv
-            JOIN translations t ON tv.translation_id = t.id
-            WHERE t.book_id = %s
-            ORDER BY t.sentence_id, tv.created_at ASC
-            """,
-            (book_id,)
-        )
-        versions = cursor.fetchall()
-        
-        # Группируем версии по sentence_id
         versions_by_sentence = {}
-        for version in versions:
-            sentence_id = version['sentence_id']
-            if sentence_id not in versions_by_sentence:
-                versions_by_sentence[sentence_id] = []
-            versions_by_sentence[sentence_id].append({
-                'text': version['text'],
-                'model': version['model'],
-                'timestamp': int(version['created_at'].timestamp() * 1000)  # Конвертируем в миллисекунды
-            })
-        
-        print(f"[DEBUG BACKEND] book_id={book_id}, translations={len(translations)}, versions_total={len(versions)}, versions_by_sentence={len(versions_by_sentence)}")
-        if versions_by_sentence:
-            first_key = list(versions_by_sentence.keys())[0]
-            print(f"[DEBUG BACKEND] Sample: {first_key} has {len(versions_by_sentence[first_key])} versions")
+        try:
+            cursor.execute(
+                """
+                SELECT t.sentence_id, tv.text, tv.model, tv.created_at
+                FROM translation_versions tv
+                JOIN translations t ON tv.translation_id = t.id
+                WHERE t.book_id = %s
+                ORDER BY t.sentence_id, tv.created_at ASC
+                """,
+                (book_id,)
+            )
+            versions = cursor.fetchall()
+            
+            # Группируем версии по sentence_id
+            for version in versions:
+                sentence_id = version['sentence_id']
+                if sentence_id not in versions_by_sentence:
+                    versions_by_sentence[sentence_id] = []
+                versions_by_sentence[sentence_id].append({
+                    'text': version['text'],
+                    'model': version['model'],
+                    'timestamp': int(version['created_at'].timestamp() * 1000)  # Конвертируем в миллисекунды
+                })
+            
+            print(f"[DEBUG BACKEND] book_id={book_id}, translations={len(translations)}, versions_total={len(versions)}, versions_by_sentence={len(versions_by_sentence)}")
+            if versions_by_sentence:
+                first_key = list(versions_by_sentence.keys())[0]
+                print(f"[DEBUG BACKEND] Sample: {first_key} has {len(versions_by_sentence[first_key])} versions")
+        except Exception as e:
+            print(f"[WARNING] Failed to load translation versions: {str(e)}")
+            # Если таблица не существует или есть ошибка, продолжаем без версий
+            versions_by_sentence = {}
     
     return {
         "book": book,
